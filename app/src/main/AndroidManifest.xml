@@ -23,7 +23,7 @@
         <!-- 高德地图 Key (必须替换为你自己申请的！) -->
         <meta-data
             android:name="com.amap.api.v2.apikey"
-            android:value="38f6351229eacf42976d8de81ee1d4e4" />
+            android:value="your_key" />
 
         <!-- LSPosed 模块声明 -->
         <meta-data

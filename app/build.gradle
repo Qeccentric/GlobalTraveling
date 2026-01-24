@@ -16,6 +16,10 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            // 只保留 64位 ARM 架构 (覆盖目前 99% 的真机)
+            abiFilters 'arm64-v8a'
+        }
     }
 
     buildTypes {
@@ -28,6 +32,7 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+
 
 }
 
@@ -42,4 +47,6 @@ dependencies {
 
     // 2. 高德地图 SDK (3D地图 + 定位)
     implementation 'com.amap.api:3dmap:9.8.2'
+    // 高德搜索 SDK
+    implementation 'com.amap.api:search:9.7.0'
 }

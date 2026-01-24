@@ -1,6 +1,10 @@
 package com.kankan.globaltraveling;
 
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
@@ -10,106 +14,131 @@ import com.amap.api.maps.MapView;
 import com.amap.api.maps.MapsInitializer;
 import com.amap.api.maps.model.LatLng;
 import com.amap.api.maps.model.MarkerOptions;
-import java.io.DataOutputStream;
+import com.amap.api.services.help.Inputtips;
+import com.amap.api.services.help.InputtipsQuery;
+import com.amap.api.services.help.Tip;
 
-public class MainActivity extends AppCompatActivity {
+import java.io.DataOutputStream;
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends AppCompatActivity implements Inputtips.InputtipsListener {
 
     private MapView mapView;
     private AMap aMap;
     private TextView tvStatus;
+    private AutoCompleteTextView etSearch; // 改用自动补全框
 
-    // 【核心】数据交换文件路径
     private static final String FILE_PATH = "/data/local/tmp/irest_loc.conf";
-
-    private double selectLat = 0;
-    private double selectLng = 0;
+    private double selectLat = 0, selectLng = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // --- 1. 高德隐私合规 (必须在 super 前) ---
         MapsInitializer.updatePrivacyShow(this, true, true);
         MapsInitializer.updatePrivacyAgree(this, true);
+        com.amap.api.services.core.ServiceSettings.updatePrivacyShow(this, true, true);
+        com.amap.api.services.core.ServiceSettings.updatePrivacyAgree(this, true);
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         tvStatus = findViewById(R.id.tv_status);
+        // 初始化 AutoCompleteTextView
+        etSearch = findViewById(R.id.et_search);
+
         mapView = findViewById(R.id.map);
         mapView.onCreate(savedInstanceState);
+        if (aMap == null) aMap = mapView.getMap();
 
-        if (aMap == null) {
-            aMap = mapView.getMap();
-        }
-
-        // 默认视角设为北京 (或者你喜欢的任何地方)
         aMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(39.9042, 116.4074), 10));
 
-        // --- 2. 地图长按选点逻辑 ---
-        aMap.setOnMapLongClickListener(latLng -> {
-            aMap.clear(); // 清除旧标记
-            aMap.addMarker(new MarkerOptions().position(latLng).title("模拟目标"));
-            selectLat = latLng.latitude;
-            selectLng = latLng.longitude;
-            tvStatus.setText(String.format("目标坐标: %.6f, %.6f", selectLat, selectLng));
-        });
+        aMap.setOnMapLongClickListener(latLng -> updateSelection(latLng.latitude, latLng.longitude, "手动选点"));
 
-        // --- 3. 穿越按钮逻辑 ---
         findViewById(R.id.btn_start).setOnClickListener(v -> {
-            if (selectLat == 0 || selectLng == 0) {
-                Toast.makeText(this, "请长按地图选择一个位置", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            // 写入格式：纬度,经度,开关(1)
-            String content = selectLat + "," + selectLng + ",1";
-            writeToSystemTmp(content);
+            if (selectLat == 0) return;
+            writeToSystemTmp(selectLat + "," + selectLng + ",1");
         });
 
-        // --- 4. 停止按钮逻辑 ---
-        findViewById(R.id.btn_stop).setOnClickListener(v -> {
-            writeToSystemTmp("0,0,0");
+        findViewById(R.id.btn_stop).setOnClickListener(v -> writeToSystemTmp("0,0,0"));
+
+        // --- 核心：配置搜索联想 ---
+        etSearch.setThreshold(1); // 输入1个字就开始联想
+
+        // 监听输入
+        etSearch.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String newText = s.toString().trim();
+                if (newText.length() > 0) {
+                    // 发起输入提示请求
+                    InputtipsQuery inputquery = new InputtipsQuery(newText, "");
+                    Inputtips inputTips = new Inputtips(MainActivity.this, inputquery);
+                    inputTips.setInputtipsListener(MainActivity.this);
+                    inputTips.requestInputtipsAsyn();
+                }
+            }
+            @Override public void afterTextChanged(Editable s) {}
+        });
+
+        // 监听下拉列表点击
+        etSearch.setOnItemClickListener((parent, view, position, id) -> {
+            // 获取选中的 Tip 对象
+            Tip tip = (Tip) parent.getItemAtPosition(position);
+            if (tip.getPoint() != null) {
+                double lat = tip.getPoint().getLatitude();
+                double lon = tip.getPoint().getLongitude();
+                // 移动地图并选点
+                aMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lon), 16));
+                updateSelection(lat, lon, tip.getName());
+                // 隐藏键盘
+                android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) imm.hideSoftInputFromWindow(etSearch.getWindowToken(), 0);
+            } else {
+                Toast.makeText(MainActivity.this, "该地点没有坐标信息", Toast.LENGTH_SHORT).show();
+            }
         });
     }
 
-    /**
-     * 使用 Root 权限将数据写入公共临时目录
-     * 并修复权限和 SELinux 上下文，确保所有 App (QQ/JD) 都能读取
-     */
+    // --- 联想结果回调 ---
+    @Override
+    public void onGetInputtips(List<Tip> tipList, int rCode) {
+        if (rCode == 1000 && tipList != null) {
+            // 使用 ArrayAdapter 显示结果
+            // Tip 重写了 toString()，默认显示名字，如果你想自定义显示格式，需要自定义 Adapter
+            ArrayAdapter<Tip> adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, tipList);
+            etSearch.setAdapter(adapter);
+            adapter.notifyDataSetChanged();
+        }
+    }
+
+    private void updateSelection(double lat, double lng, String title) {
+        selectLat = lat;
+        selectLng = lng;
+        aMap.clear();
+        aMap.addMarker(new MarkerOptions().position(new LatLng(lat, lng)).title(title));
+        tvStatus.setText("已选: " + title + "\n" + String.format("%.5f, %.5f", lat, lng));
+    }
+
     private void writeToSystemTmp(String content) {
         new Thread(() -> {
             try {
-                // 请求 su 权限
                 Process p = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(p.getOutputStream());
-
-                // A. 写入文件
                 os.writeBytes("echo \"" + content + "\" > " + FILE_PATH + "\n");
-
-                // B. 修改权限为 666 (全员读写)
                 os.writeBytes("chmod 666 " + FILE_PATH + "\n");
-
-                // C. 【关键】修改 SELinux 上下文为 shell 数据文件，防止被系统拦截读取
                 os.writeBytes("chcon u:object_r:shell_data_file:s0 " + FILE_PATH + "\n");
-
                 os.writeBytes("exit\n");
                 os.flush();
                 int ret = p.waitFor();
-
                 runOnUiThread(() -> {
-                    if (ret == 0) {
-                        Toast.makeText(this, "🚀 曼巴意志：坐标已锁定！", Toast.LENGTH_SHORT).show();
-                    } else {
-                        Toast.makeText(this, "❌ 写入失败，请检查 Root 授权", Toast.LENGTH_LONG).show();
-                    }
+                    if (ret == 0) Toast.makeText(this, "🚀 坐标已锁定", Toast.LENGTH_SHORT).show();
                 });
-            } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(this, "异常: " + e.getMessage(), Toast.LENGTH_LONG).show());
-            }
+            } catch (Exception e) { e.printStackTrace(); }
         }).start();
     }
 
-    // --- 5. 地图生命周期管理 ---
-    @Override protected void onDestroy() { super.onDestroy(); if(mapView != null) mapView.onDestroy(); }
-    @Override protected void onResume() { super.onResume(); if(mapView != null) mapView.onResume(); }
-    @Override protected void onPause() { super.onPause(); if(mapView != null) mapView.onPause(); }
-    @Override protected void onSaveInstanceState(Bundle outState) { super.onSaveInstanceState(outState); if(mapView != null) mapView.onSaveInstanceState(outState); }
+    @Override protected void onDestroy() { super.onDestroy(); mapView.onDestroy(); }
+    @Override protected void onResume() { super.onResume(); mapView.onResume(); }
+    @Override protected void onPause() { super.onPause(); mapView.onPause(); }
+    @Override protected void onSaveInstanceState(Bundle outState) { super.onSaveInstanceState(outState); mapView.onSaveInstanceState(outState); }
 }
