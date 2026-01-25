@@ -1,23 +1,20 @@
 plugins {
-    alias(libs.plugins.android.application)
+    id 'com.android.application'
 }
 
 android {
     namespace 'com.kankan.globaltraveling'
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk 34 // 建议用 33 或 34，比较稳定
 
     defaultConfig {
         applicationId "com.kankan.globaltraveling"
         minSdk 26
-        targetSdk 36
+        targetSdk 34
         versionCode 1
         versionName "1.0"
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // 只打包 arm64，减小体积
         ndk {
-            // 只保留 64位 ARM 架构 (覆盖目前 99% 的真机)
             abiFilters 'arm64-v8a'
         }
     }
@@ -28,25 +25,25 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+
+    // 解决 16KB 对齐报错
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
-
-
 }
 
 dependencies {
-    implementation libs.appcompat
-    implementation libs.material
-    testImplementation libs.junit
-    androidTestImplementation libs.ext.junit
-    androidTestImplementation libs.espresso.core
-    // 1. LSPosed API
-    compileOnly 'de.robv.android.xposed:api:82'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0' // 必须有这个
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.cardview:cardview:1.0.0'
 
-    // 2. 高德地图 SDK (3D地图 + 定位)
+    // 高德地图 & 搜索
     implementation 'com.amap.api:3dmap:9.8.2'
-    // 高德搜索 SDK
     implementation 'com.amap.api:search:9.7.0'
+
+    // LSPosed
+    compileOnly 'de.robv.android.xposed:api:82'
 }
