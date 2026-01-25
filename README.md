@@ -8,7 +8,7 @@
 ### 📥 [点击下载最新版 APK](https://github.com/qizhenwei399/GlobalTraveling/releases/latest)
 ### 📥 [点击下载最新版 蓝奏云](https://wwaon.lanzoup.com/iP1b43gzhcwb密码:4ipi)
 
-**GlobalTraveling** 是一款基于 **LSPosed** 框架的 Android 系统级虚拟定位与环境伪装模块。
+**Shadow** 是一款基于 **LSPosed** 框架的 Android 系统级虚拟定位与环境伪装模块。
 
 不同于传统的 Mock Location（模拟位置），本项目采用 **系统层 Hook + 底层文件交互** 的方式，能够对系统 GPS、基站信息 (Cell)、Wi-Fi 列表及各大地图 SDK（高德/腾讯）进行全维度的位置模拟。
 
